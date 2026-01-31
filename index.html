@@ -1,211 +1,337 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>裱框費用計算</title>
-  <style>
-    body{margin:0;font-family:system-ui,-apple-system,"Noto Sans TC",Arial;background:#f6f7fb;color:#111}
-    .wrap{max-width:560px;margin:0 auto;padding:14px 12px 28px}
-    .card{background:#fff;border-radius:18px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.08)}
-    h1{font-size:1.2rem;margin:6px 0 12px}
-    .sub{font-size:.9rem;color:#555;line-height:1.45;margin-bottom:14px}
-    label{display:block;margin:10px 0 6px;font-size:.92rem;color:#333}
-    input[type="number"]{
-      width:100%;box-sizing:border-box;
-      padding:14px 12px;border-radius:14px;border:1px solid #d7dbe6;
-      font-size:1.08rem;outline:none;background:#fff;
+# framing_quote.py
+# -*- coding: utf-8 -*-
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+
+CM_PER_INCH = 2.54
+
+@dataclass
+class Padding:
+    top: float
+    bottom: float
+    left: float
+    right: float
+
+    @property
+    def v_add(self) -> float:
+        return self.top + self.bottom
+
+    @property
+    def h_add(self) -> float:
+        return self.left + self.right
+
+def cm_to_inch(x_cm: float) -> float:
+    return x_cm / CM_PER_INCH
+
+def calc_outer_size_cm(w_cm: float, h_cm: float, pad: Padding) -> Tuple[float, float]:
+    """Return (outer_w_cm, outer_h_cm) after padding."""
+    return w_cm + pad.h_add, h_cm + pad.v_add
+
+def calc_cai(area_w_cm: float, area_h_cm: float) -> float:
+    """1 才 = 30cm x 30cm = 900 cm^2"""
+    return (area_w_cm * area_h_cm) / 900.0
+
+# ---------------------------
+# 1) 內襯預留規則（依類別）
+# ---------------------------
+
+# 一般類：0 或 10 (上下/左右)
+PAD_0 = Padding(0, 0, 0, 0)
+PAD_10 = Padding(10, 10, 10, 10)
+
+# 水墨書法一般裱框（鏡片）— 依「畫心尺寸」對應內襯上下/左右（這裡上下=上+下各一半？）
+# 你給的是「上下X、左右Y」(看起來是總留白)，我以下採用：上下 = 上下各 X/2；左右 = 左右各 Y/2
+# 如果你實際是「上=X、下=X」（不是總和），把 split_total 改 False 即可。
+def pad_from_total(updown_total: float, leftright_total: float, split_total: bool = True) -> Padding:
+    if split_total:
+        return Padding(updown_total/2, updown_total/2, leftright_total/2, leftright_total/2)
+    else:
+        return Padding(updown_total, updown_total, leftright_total, leftright_total)
+
+CALLIGRAPHY_FRAME_TABLE: Dict[Tuple[float, float], Padding] = {
+    (20, 35): pad_from_total(10, 6),
+    (35, 70): pad_from_total(10, 6),
+    (45, 70): pad_from_total(12, 6),
+    (70, 70): pad_from_total(7, 7),
+    (35, 138): pad_from_total(15, 6),
+    (50, 100): pad_from_total(15, 7),
+    (70, 138): pad_from_total(15, 7),
+    (90, 180): pad_from_total(30, 9),
+    (120, 240): pad_from_total(40, 12),
+}
+
+# 水墨|書法裱立體框：直/橫不同
+CALLIGRAPHY_SHADOWBOX_VERTICAL = pad_from_total(10, 6)   # 直式：上下10 左右6（總留白拆半）
+CALLIGRAPHY_SHADOWBOX_HORIZONTAL = pad_from_total(6, 10) # 橫式：上下6 左右10（總留白拆半）
+
+# 水墨|書法裱捲軸：依尺寸表
+CALLIGRAPHY_SCROLL_TABLE: Dict[Tuple[float, float], Padding] = {
+    (20, 35): pad_from_total(40, 6),
+    (35, 70): pad_from_total(35, 6),
+    (45, 70): pad_from_total(35, 6),
+    (70, 70): pad_from_total(40, 7),
+    (35, 138): pad_from_total(35, 6),
+    (50, 100): pad_from_total(35, 7),
+    (70, 138): pad_from_total(35, 7),
+    (90, 180): pad_from_total(40, 9),
+    (120, 240): pad_from_total(45, 12),
+}
+
+# 無框畫：有一個水墨書法裱綾布做無框畫
+CANVASLESS_CALLIGRAPHY_BROCADE = pad_from_total(18, 9)
+
+# 作品分類（第一部分選項）-> Padding 規則
+# 你列的很多項目其實只有 0 或 10，這裡統一映射
+CATEGORY_PADDING_RULES: Dict[str, Padding] = {
+    # 拼圖框
+    "拼圖框-一般框+冷裱熱壓": PAD_0,
+    "拼圖框-一般框+壓克力": PAD_0,
+    "拼圖框-圖壓框": PAD_0,
+    "拼圖框-立體框": PAD_10,
+
+    # 油畫/膠彩/壓克力畫（已有布架/板架）
+    "油畫膠彩壓克力-直接裝框": PAD_0,
+    "油畫膠彩壓克力-一般框+壓克力": PAD_0,
+    "油畫膠彩壓克力-立體框": PAD_10,
+
+    # 水彩|素描|版畫|海報|照片|證書
+    "紙類-一般框": PAD_0,
+    "紙類-立體框": PAD_10,
+
+    # 絲巾|唐卡|報紙|薄海報
+    "軟材-一般框": PAD_0,
+    "軟材-立體框": PAD_10,
+
+    # 球衣/應援毛巾/紀念服
+    "服飾-一般框": PAD_0,
+    "服飾-立體框": PAD_10,
+
+    # 十字繡|鑽石貼
+    "十字繡鑽石貼-一般框+壓克力": PAD_0,
+
+    # 無框畫
+    "無框畫-畫布類繃布架": PAD_0,
+    "無框畫-油畫布輸出含繃布架": PAD_0,
+    "無框畫-水墨書法畫心做無框畫": PAD_0,
+    "無框畫-水墨書法裱綾布做無框畫": CANVASLESS_CALLIGRAPHY_BROCADE,
+
+    # 立體作品
+    "立體作品-各類": PAD_10,
+}
+
+# ---------------------------
+# 2) 材料單價（每才）
+# ---------------------------
+MATERIAL_FIELDS = [
+    "外框單價", "內框單價", "卡紙單價", "底布單價",
+    "綾布單價", "絹布單價", "綿布單價"
+]
+
+# ---------------------------
+# 3) 工法/配件（每才）
+# ---------------------------
+PROCESS_UNIT_PRICES: Dict[str, float] = {
+    "膠膜": 70,
+    "貼工": 110,
+    "壓克力": 90,
+    "背板": 60,
+    "冷裱膜（鑽石膜）": 120,
+    "熱壓": 100,
+    "裱褙": 200,
+    "板架（龍骨）": 200,
+    "浮板（獅子裱背板）": 100,
+    "相紙輸出": 100,
+    "油畫布輸出": 150,
+    "繃畫架（布架、油畫內框）": 120,
+    "隱形玻璃": 1000,
+    "高級明鏡5mm": 120,
+    "後箱美背": 350,
+    "油畫凡尼斯保護": 200,
+}
+
+def pick_calligraphy_pad(mode: str, w_cm: float, h_cm: float, orientation: str) -> Padding:
+    """
+    mode: '一般裱框', '裱立體框', '裱捲軸'
+    orientation: '直式' or '橫式'
+    """
+    # 把輸入尺寸標準化成 (短邊, 長邊) 去查表（因為你表是固定寫法）
+    key = (min(w_cm, h_cm), max(w_cm, h_cm))
+
+    if mode == "一般裱框":
+        if key not in CALLIGRAPHY_FRAME_TABLE:
+            raise ValueError(f"找不到水墨書法一般裱框的尺寸對應：{key}。請改用自訂內襯或確認輸入尺寸。")
+        return CALLIGRAPHY_FRAME_TABLE[key]
+
+    if mode == "裱捲軸":
+        if key not in CALLIGRAPHY_SCROLL_TABLE:
+            raise ValueError(f"找不到水墨書法捲軸的尺寸對應：{key}。請改用自訂內襯或確認輸入尺寸。")
+        return CALLIGRAPHY_SCROLL_TABLE[key]
+
+    if mode == "裱立體框":
+        return CALLIGRAPHY_SHADOWBOX_VERTICAL if orientation == "直式" else CALLIGRAPHY_SHADOWBOX_HORIZONTAL
+
+    raise ValueError("未知的水墨書法模式")
+
+def calc_quote(
+    w_cm: float,
+    h_cm: float,
+    padding: Padding,
+    material_unit_prices: Dict[str, float],
+    selected_processes: List[str],
+    process_unit_override: Optional[Dict[str, float]] = None,
+) -> Dict:
+    """Return a full breakdown quote."""
+    outer_w, outer_h = calc_outer_size_cm(w_cm, h_cm, padding)
+    outer_w_in, outer_h_in = cm_to_inch(outer_w), cm_to_inch(outer_h)
+
+    cai = calc_cai(outer_w, outer_h)
+
+    # Part 2: materials
+    material_costs = {}
+    for k, unit_price in material_unit_prices.items():
+        if unit_price and unit_price > 0:
+            material_costs[k] = cai * unit_price
+        else:
+            material_costs[k] = 0.0
+
+    # Part 3: processes
+    unit_prices = dict(PROCESS_UNIT_PRICES)
+    if process_unit_override:
+        unit_prices.update(process_unit_override)
+
+    process_costs = {}
+    for p in selected_processes:
+        if p not in unit_prices:
+            raise ValueError(f"工法/配件不存在：{p}")
+        process_costs[p] = cai * unit_prices[p]
+
+    material_total = sum(material_costs.values())
+    process_total = sum(process_costs.values())
+    grand_total = material_total + process_total
+
+    return {
+        "input_size_cm": (w_cm, h_cm),
+        "padding_cm": padding,
+        "outer_size_cm": (outer_w, outer_h),
+        "outer_size_in": (outer_w_in, outer_h_in),
+        "cai": cai,
+        "material_costs": material_costs,
+        "process_costs": process_costs,
+        "material_total": material_total,
+        "process_total": process_total,
+        "grand_total": grand_total,
     }
-    input[type="number"]:focus{border-color:#2f6bff;box-shadow:0 0 0 4px rgba(47,107,255,.14)}
-    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .options{
-      margin-top:10px;
-      padding:12px;border-radius:14px;background:#fafbff;border:1px solid #e6ebff;
-      display:grid;gap:10px;
-    }
-    .optLine{display:flex;align-items:center;gap:10px;font-size:.95rem;color:#222}
-    .optLine input{transform:scale(1.15)}
-    .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-    button{
-      padding:14px 12px;border-radius:14px;border:0;
-      font-size:1.02rem;font-weight:800;cursor:pointer;
-    }
-    .primary{background:#2f6bff;color:#fff}
-    .secondary{background:#eef2ff;color:#2f6bff}
-    .result{
-      margin-top:14px;padding:14px;border-radius:16px;
-      background:#f2f6ff;border:1px solid #dbe7ff;text-align:center;
-      display:none;
-    }
-    .price{font-size:1.7rem;font-weight:900;margin-top:6px}
-    .detail{font-size:.86rem;color:#666;line-height:1.35;margin-top:6px}
-    .breakdown{
-      margin-top:10px;
-      display:grid; gap:6px;
-      text-align:left;
-      background:#fff;
-      border:1px solid #dbe7ff;
-      border-radius:14px;
-      padding:10px 12px;
-      font-size:.92rem;
-      color:#222;
-    }
-    .line{display:flex;justify-content:space-between;gap:12px}
-    .muted{color:#666}
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <div class="card">
-    <h1>裱框費用計算</h1>
-    <div class="sub">
-      計價單位：每 <b>15 公分</b> 為一單位<br>
-      框價 = <b>(總長度 cm ÷ 15) × 框單價</b><br>
-      壓克力（可選）= <b>(總長度 cm ÷ 15) × 70</b>
-    </div>
 
-    <div class="row2">
-      <div>
-        <label for="L">長（cm）</label>
-        <input id="L" type="number" inputmode="decimal" placeholder="例如 100">
-      </div>
-      <div>
-        <label for="W">寬（cm）</label>
-        <input id="W" type="number" inputmode="decimal" placeholder="例如 100">
-      </div>
-    </div>
+# ---------------------------
+# CLI 互動介面（可直接跑）
+# ---------------------------
+def prompt_float(msg: str) -> float:
+    while True:
+        s = input(msg).strip()
+        try:
+            return float(s)
+        except ValueError:
+            print("請輸入數字（可含小數）。")
 
-    <label for="P">框的單價（每 15cm 的單價）</label>
-    <input id="P" type="number" inputmode="decimal" placeholder="例如 80">
+def prompt_yesno(msg: str) -> bool:
+    s = input(msg + " (y/n): ").strip().lower()
+    return s in ("y", "yes", "1", "是")
 
-    <div class="options">
-      <div class="optLine">
-        <input id="mat" type="checkbox">
-        <label for="mat" style="margin:0;">加卡板（每邊 3cm → 長寬各 +6cm）</label>
-      </div>
+def main():
+    print("=== 裱框報價程式（依才計價）===\n")
 
-      <div class="optLine">
-        <input id="acrylic" type="checkbox">
-        <label for="acrylic" style="margin:0;">
-          加壓克力（單價固定 70 / 每 15cm）
-        </label>
-      </div>
+    w = prompt_float("請輸入作品『寬』(cm): ")
+    h = prompt_float("請輸入作品『高』(cm): ")
 
-      <div class="optLine" style="align-items:flex-start;">
-        <div style="min-width:72px;font-weight:800;">總長度</div>
-        <div style="display:grid;gap:6px;">
-          <label class="optLine" style="margin:0;">
-            <input type="radio" name="mode" value="sum" checked>
-            用（長 + 寬）
-          </label>
-          <label class="optLine" style="margin:0;">
-            <input type="radio" name="mode" value="perimeter">
-            用周長 2×（長 + 寬）
-          </label>
-        </div>
-      </div>
-    </div>
+    orientation = "直式" if h >= w else "橫式"
+    if prompt_yesno(f"系統判斷為 {orientation}，要手動改嗎？"):
+        orientation = "直式" if input("輸入 1=直式, 2=橫式: ").strip() == "1" else "橫式"
 
-    <div class="btns">
-      <button class="primary" id="calcBtn">計算費用</button>
-      <button class="secondary" id="resetBtn">清除</button>
-    </div>
+    print("\n選擇第一部分：作品類型/框法（會決定內襯預留）")
+    options = list(CATEGORY_PADDING_RULES.keys()) + [
+        "水墨書法-一般裱框(依尺寸表)",
+        "水墨書法-裱立體框(直橫不同)",
+        "水墨書法-裱捲軸(依尺寸表)",
+        "自訂內襯(手動輸入上下左右)"
+    ]
 
-    <div class="result" id="resultBox">
-      <div id="titleText">裱框費用</div>
-      <div class="price" id="priceText">—</div>
+    for i, opt in enumerate(options, 1):
+        print(f"{i:>2}. {opt}")
 
-      <div class="breakdown" id="breakdownBox" style="display:none;">
-        <div class="line"><span class="muted">框價</span><span id="frameCost">—</span></div>
-        <div class="line"><span class="muted">壓克力</span><span id="acrylicCost">—</span></div>
-        <div class="line" style="font-weight:900;"><span>總計</span><span id="grandTotal">—</span></div>
-      </div>
+    idx = int(prompt_float("請輸入選項編號: "))
+    choice = options[idx - 1]
 
-      <div class="detail" id="detailText"></div>
-    </div>
-  </div>
-</div>
+    if choice.startswith("水墨書法-"):
+        if "一般裱框" in choice:
+            pad = pick_calligraphy_pad("一般裱框", w, h, orientation)
+        elif "裱立體框" in choice:
+            pad = pick_calligraphy_pad("裱立體框", w, h, orientation)
+        else:
+            pad = pick_calligraphy_pad("裱捲軸", w, h, orientation)
+    elif choice == "自訂內襯(手動輸入上下左右)":
+        top = prompt_float("上預留(cm): ")
+        bottom = prompt_float("下預留(cm): ")
+        left = prompt_float("左預留(cm): ")
+        right = prompt_float("右預留(cm): ")
+        pad = Padding(top, bottom, left, right)
+    else:
+        pad = CATEGORY_PADDING_RULES[choice]
 
-<script>
-  const ACRYLIC_UNIT_PRICE = 70; // 壓克力固定單價（每 15cm）
+    # Part 2 materials
+    print("\n第二部分：輸入材料單價（每才）。不使用就填 0。")
+    material_prices = {}
+    for k in MATERIAL_FIELDS:
+        material_prices[k] = prompt_float(f"{k} (元/才): ")
 
-  const el = (id) => document.getElementById(id);
+    # Part 3 processes
+    print("\n第三部分：選擇工法/配件（每才計價）。輸入逗號分隔編號，如：1,3,5；不選直接 Enter。")
+    process_names = list(PROCESS_UNIT_PRICES.keys())
+    for i, p in enumerate(process_names, 1):
+        print(f"{i:>2}. {p}  ({PROCESS_UNIT_PRICES[p]} /才)")
 
-  function getMode(){
-    return [...document.querySelectorAll('input[name="mode"]')]
-      .find(r => r.checked)?.value || "sum";
-  }
+    sel = input("選擇：").strip()
+    selected = []
+    if sel:
+        for part in sel.split(","):
+            n = int(part.strip())
+            selected.append(process_names[n - 1])
 
-  function calc(){
-    let L = parseFloat(el("L").value);
-    let W = parseFloat(el("W").value);
-    const frameUnitPrice = parseFloat(el("P").value);
+    # 計算
+    quote = calc_quote(
+        w_cm=w,
+        h_cm=h,
+        padding=pad,
+        material_unit_prices=material_prices,
+        selected_processes=selected
+    )
 
-    if (Number.isNaN(L) || Number.isNaN(W) || Number.isNaN(frameUnitPrice)){
-      alert("請輸入長、寬、框的單價");
-      return;
-    }
+    # 輸出
+    ow, oh = quote["outer_size_cm"]
+    owi, ohi = quote["outer_size_in"]
+    print("\n================= 報價結果 =================")
+    print(f"作品尺寸(cm)：{w:.2f} × {h:.2f}  （{orientation}）")
+    print(f"內襯預留(cm)：上{pad.top} 下{pad.bottom} 左{pad.left} 右{pad.right}")
+    print(f"裱框內容物外尺寸(cm)：{ow:.2f} × {oh:.2f}")
+    print(f"裱框內容物外尺寸(in)：{owi:.2f} × {ohi:.2f}")
+    print(f"面積(才)：(外寬×外高)/900 = {quote['cai']:.4f}")
 
-    // 卡板：每邊 3cm -> 長寬各 +6cm
-    const matOn = el("mat").checked;
-    if (matOn){
-      L += 6;
-      W += 6;
-    }
+    print("\n--- 材料費（每才 × 才數）---")
+    for k, v in quote["material_costs"].items():
+        if v > 0:
+            print(f"{k}: {v:.2f}")
+    print(f"材料小計：{quote['material_total']:.2f}")
 
-    const mode = getMode();
-    const totalCm = (mode === "perimeter") ? 2 * (L + W) : (L + W);
+    print("\n--- 工藝/配件費（每才 × 才數）---")
+    if quote["process_costs"]:
+        for k, v in quote["process_costs"].items():
+            print(f"{k}: {v:.2f}")
+    else:
+        print("（未選擇）")
+    print(f"工藝小計：{quote['process_total']:.2f}")
 
-    const units = totalCm / 15;              // 15cm 計價單位（可小數）
-    const frameCost = units * frameUnitPrice;
+    print("\n=== 第四部分：總價 ===")
+    print(f"總價（材料 + 工藝）：{quote['grand_total']:.2f}")
+    print("===========================================\n")
 
-    const acrylicOn = el("acrylic").checked;
-    const acrylicCost = acrylicOn ? (units * ACRYLIC_UNIT_PRICE) : 0;
-
-    const grandTotal = frameCost + acrylicCost;
-
-    el("resultBox").style.display = "block";
-    el("breakdownBox").style.display = "block";
-
-    el("frameCost").textContent = `${frameCost.toFixed(2)} 元`;
-    el("acrylicCost").textContent = acrylicOn ? `${acrylicCost.toFixed(2)} 元` : `0.00 元`;
-    el("grandTotal").textContent = `${grandTotal.toFixed(2)} 元`;
-
-    el("titleText").textContent = "裱框費用（框 + 可選壓克力）";
-    el("priceText").textContent = `${grandTotal.toFixed(2)} 元`;
-
-    const baseNote = matOn ? "含卡板（長寬各 +6cm）" : "未加卡板";
-    const modeNote = (mode === "perimeter") ? "周長 2×(長+寬)" : "(長+寬)";
-
-    let detail = `${baseNote}｜總長度=${modeNote}=${totalCm.toFixed(2)}cm｜單位=${totalCm.toFixed(2)}/15=${units.toFixed(4)}｜框：${units.toFixed(4)}×${frameUnitPrice}=${frameCost.toFixed(2)}`;
-    if (acrylicOn){
-      detail += `｜壓克力：${units.toFixed(4)}×${ACRYLIC_UNIT_PRICE}=${acrylicCost.toFixed(2)}`;
-    }
-    el("detailText").textContent = detail;
-  }
-
-  function resetAll(){
-    el("L").value = "";
-    el("W").value = "";
-    el("P").value = "";
-    el("mat").checked = false;
-    el("acrylic").checked = false;
-    document.querySelector('input[name="mode"][value="sum"]').checked = true;
-    el("resultBox").style.display = "none";
-    el("breakdownBox").style.display = "none";
-    el("L").focus();
-  }
-
-  el("calcBtn").addEventListener("click", calc);
-  el("resetBtn").addEventListener("click", resetAll);
-
-  // 方便：結果已顯示時，變更就自動重算
-  ["L","W","P","mat","acrylic"].forEach(id => el(id).addEventListener("input", () => {
-    if (el("resultBox").style.display === "block") calc();
-  }));
-  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener("change", () => {
-    if (el("resultBox").style.display === "block") calc();
-  }));
-</script>
-</body>
-</html>
+if __name__ == "__main__":
+    main()
