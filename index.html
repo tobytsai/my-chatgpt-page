@@ -1,9 +1,10 @@
-# framing_quote.py
+# framing_quote_perimeter.py
 # -*- coding: utf-8 -*-
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 
 CM_PER_INCH = 2.54
+CM_PER_CHI = 30.3  # 預設：台尺 30.3cm（若你店內用市尺 33.33cm，改成 33.33）
 
 @dataclass
 class Padding:
@@ -23,26 +24,26 @@ class Padding:
 def cm_to_inch(x_cm: float) -> float:
     return x_cm / CM_PER_INCH
 
+def cm_to_chi(x_cm: float) -> float:
+    return x_cm / CM_PER_CHI
+
 def calc_outer_size_cm(w_cm: float, h_cm: float, pad: Padding) -> Tuple[float, float]:
-    """Return (outer_w_cm, outer_h_cm) after padding."""
     return w_cm + pad.h_add, h_cm + pad.v_add
 
+def calc_perimeter_cm(w_cm: float, h_cm: float) -> float:
+    return 2.0 * (w_cm + h_cm)
+
 def calc_cai(area_w_cm: float, area_h_cm: float) -> float:
-    """1 才 = 30cm x 30cm = 900 cm^2"""
     return (area_w_cm * area_h_cm) / 900.0
 
 # ---------------------------
 # 1) 內襯預留規則（依類別）
 # ---------------------------
-
-# 一般類：0 或 10 (上下/左右)
 PAD_0 = Padding(0, 0, 0, 0)
 PAD_10 = Padding(10, 10, 10, 10)
 
-# 水墨書法一般裱框（鏡片）— 依「畫心尺寸」對應內襯上下/左右（這裡上下=上+下各一半？）
-# 你給的是「上下X、左右Y」(看起來是總留白)，我以下採用：上下 = 上下各 X/2；左右 = 左右各 Y/2
-# 如果你實際是「上=X、下=X」（不是總和），把 split_total 改 False 即可。
 def pad_from_total(updown_total: float, leftright_total: float, split_total: bool = True) -> Padding:
+    # 你的表寫「上下X、左右Y」，多數店內會把它視為「總留白」→ 上下各一半、左右各一半
     if split_total:
         return Padding(updown_total/2, updown_total/2, leftright_total/2, leftright_total/2)
     else:
@@ -60,11 +61,9 @@ CALLIGRAPHY_FRAME_TABLE: Dict[Tuple[float, float], Padding] = {
     (120, 240): pad_from_total(40, 12),
 }
 
-# 水墨|書法裱立體框：直/橫不同
-CALLIGRAPHY_SHADOWBOX_VERTICAL = pad_from_total(10, 6)   # 直式：上下10 左右6（總留白拆半）
-CALLIGRAPHY_SHADOWBOX_HORIZONTAL = pad_from_total(6, 10) # 橫式：上下6 左右10（總留白拆半）
+CALLIGRAPHY_SHADOWBOX_VERTICAL = pad_from_total(10, 6)
+CALLIGRAPHY_SHADOWBOX_HORIZONTAL = pad_from_total(6, 10)
 
-# 水墨|書法裱捲軸：依尺寸表
 CALLIGRAPHY_SCROLL_TABLE: Dict[Tuple[float, float], Padding] = {
     (20, 35): pad_from_total(40, 6),
     (35, 70): pad_from_total(35, 6),
@@ -77,55 +76,42 @@ CALLIGRAPHY_SCROLL_TABLE: Dict[Tuple[float, float], Padding] = {
     (120, 240): pad_from_total(45, 12),
 }
 
-# 無框畫：有一個水墨書法裱綾布做無框畫
 CANVASLESS_CALLIGRAPHY_BROCADE = pad_from_total(18, 9)
 
-# 作品分類（第一部分選項）-> Padding 規則
-# 你列的很多項目其實只有 0 或 10，這裡統一映射
 CATEGORY_PADDING_RULES: Dict[str, Padding] = {
-    # 拼圖框
     "拼圖框-一般框+冷裱熱壓": PAD_0,
     "拼圖框-一般框+壓克力": PAD_0,
     "拼圖框-圖壓框": PAD_0,
     "拼圖框-立體框": PAD_10,
 
-    # 油畫/膠彩/壓克力畫（已有布架/板架）
     "油畫膠彩壓克力-直接裝框": PAD_0,
     "油畫膠彩壓克力-一般框+壓克力": PAD_0,
     "油畫膠彩壓克力-立體框": PAD_10,
 
-    # 水彩|素描|版畫|海報|照片|證書
     "紙類-一般框": PAD_0,
     "紙類-立體框": PAD_10,
 
-    # 絲巾|唐卡|報紙|薄海報
     "軟材-一般框": PAD_0,
     "軟材-立體框": PAD_10,
 
-    # 球衣/應援毛巾/紀念服
     "服飾-一般框": PAD_0,
     "服飾-立體框": PAD_10,
 
-    # 十字繡|鑽石貼
     "十字繡鑽石貼-一般框+壓克力": PAD_0,
 
-    # 無框畫
     "無框畫-畫布類繃布架": PAD_0,
     "無框畫-油畫布輸出含繃布架": PAD_0,
     "無框畫-水墨書法畫心做無框畫": PAD_0,
     "無框畫-水墨書法裱綾布做無框畫": CANVASLESS_CALLIGRAPHY_BROCADE,
 
-    # 立體作品
     "立體作品-各類": PAD_10,
 }
 
 # ---------------------------
-# 2) 材料單價（每才）
+# 2) 材料（卡紙/布類）仍以「才」計價
+#    外框/內框改成「周長」計價
 # ---------------------------
-MATERIAL_FIELDS = [
-    "外框單價", "內框單價", "卡紙單價", "底布單價",
-    "綾布單價", "絹布單價", "綿布單價"
-]
+AREA_MATERIAL_FIELDS = ["卡紙單價", "底布單價", "綾布單價", "絹布單價", "綿布單價"]
 
 # ---------------------------
 # 3) 工法/配件（每才）
@@ -150,51 +136,60 @@ PROCESS_UNIT_PRICES: Dict[str, float] = {
 }
 
 def pick_calligraphy_pad(mode: str, w_cm: float, h_cm: float, orientation: str) -> Padding:
-    """
-    mode: '一般裱框', '裱立體框', '裱捲軸'
-    orientation: '直式' or '橫式'
-    """
-    # 把輸入尺寸標準化成 (短邊, 長邊) 去查表（因為你表是固定寫法）
     key = (min(w_cm, h_cm), max(w_cm, h_cm))
-
     if mode == "一般裱框":
         if key not in CALLIGRAPHY_FRAME_TABLE:
-            raise ValueError(f"找不到水墨書法一般裱框的尺寸對應：{key}。請改用自訂內襯或確認輸入尺寸。")
+            raise ValueError(f"找不到水墨書法一般裱框的尺寸對應：{key}")
         return CALLIGRAPHY_FRAME_TABLE[key]
-
     if mode == "裱捲軸":
         if key not in CALLIGRAPHY_SCROLL_TABLE:
-            raise ValueError(f"找不到水墨書法捲軸的尺寸對應：{key}。請改用自訂內襯或確認輸入尺寸。")
+            raise ValueError(f"找不到水墨書法捲軸的尺寸對應：{key}")
         return CALLIGRAPHY_SCROLL_TABLE[key]
-
     if mode == "裱立體框":
         return CALLIGRAPHY_SHADOWBOX_VERTICAL if orientation == "直式" else CALLIGRAPHY_SHADOWBOX_HORIZONTAL
-
     raise ValueError("未知的水墨書法模式")
 
 def calc_quote(
     w_cm: float,
     h_cm: float,
     padding: Padding,
-    material_unit_prices: Dict[str, float],
+    frame_unit: str,                 # "inch" or "chi"
+    outer_frame_unit_price: float,   # 外框單價（每英吋 or 每尺）
+    inner_frame_unit_price: float,   # 內框單價（每英吋 or 每尺）
+    area_material_unit_prices: Dict[str, float],  # 卡紙/布類（每才）
     selected_processes: List[str],
     process_unit_override: Optional[Dict[str, float]] = None,
 ) -> Dict:
-    """Return a full breakdown quote."""
+
+    # 外尺寸（內襯外緣）— 用來算面積 & 周長
     outer_w, outer_h = calc_outer_size_cm(w_cm, h_cm, padding)
+
+    # 內容物外尺寸（英吋顯示用）
     outer_w_in, outer_h_in = cm_to_inch(outer_w), cm_to_inch(outer_h)
 
+    # 才（面積計價用）
     cai = calc_cai(outer_w, outer_h)
 
-    # Part 2: materials
-    material_costs = {}
-    for k, unit_price in material_unit_prices.items():
-        if unit_price and unit_price > 0:
-            material_costs[k] = cai * unit_price
-        else:
-            material_costs[k] = 0.0
+    # 周長（框計價用）
+    perimeter_cm = calc_perimeter_cm(outer_w, outer_h)
+    if frame_unit == "inch":
+        perimeter_unit = cm_to_inch(perimeter_cm)
+        unit_label = "英吋"
+    elif frame_unit == "chi":
+        perimeter_unit = cm_to_chi(perimeter_cm)
+        unit_label = "尺"
+    else:
+        raise ValueError("frame_unit 只能是 'inch' 或 'chi'")
 
-    # Part 3: processes
+    outer_frame_cost = perimeter_unit * max(0.0, outer_frame_unit_price)
+    inner_frame_cost = perimeter_unit * max(0.0, inner_frame_unit_price)
+
+    # 材料費（才）
+    area_material_costs = {}
+    for k, unit_price in area_material_unit_prices.items():
+        area_material_costs[k] = cai * max(0.0, unit_price)
+
+    # 工法費（才）
     unit_prices = dict(PROCESS_UNIT_PRICES)
     if process_unit_override:
         unit_prices.update(process_unit_override)
@@ -205,9 +200,10 @@ def calc_quote(
             raise ValueError(f"工法/配件不存在：{p}")
         process_costs[p] = cai * unit_prices[p]
 
-    material_total = sum(material_costs.values())
+    frame_total = outer_frame_cost + inner_frame_cost
+    material_total = sum(area_material_costs.values())
     process_total = sum(process_costs.values())
-    grand_total = material_total + process_total
+    grand_total = frame_total + material_total + process_total
 
     return {
         "input_size_cm": (w_cm, h_cm),
@@ -215,7 +211,13 @@ def calc_quote(
         "outer_size_cm": (outer_w, outer_h),
         "outer_size_in": (outer_w_in, outer_h_in),
         "cai": cai,
-        "material_costs": material_costs,
+        "perimeter_cm": perimeter_cm,
+        "perimeter_unit": perimeter_unit,
+        "perimeter_unit_label": unit_label,
+        "outer_frame_cost": outer_frame_cost,
+        "inner_frame_cost": inner_frame_cost,
+        "frame_total": frame_total,
+        "area_material_costs": area_material_costs,
         "process_costs": process_costs,
         "material_total": material_total,
         "process_total": process_total,
@@ -223,7 +225,7 @@ def calc_quote(
     }
 
 # ---------------------------
-# CLI 互動介面（可直接跑）
+# CLI
 # ---------------------------
 def prompt_float(msg: str) -> float:
     while True:
@@ -233,31 +235,24 @@ def prompt_float(msg: str) -> float:
         except ValueError:
             print("請輸入數字（可含小數）。")
 
-def prompt_yesno(msg: str) -> bool:
-    s = input(msg + " (y/n): ").strip().lower()
-    return s in ("y", "yes", "1", "是")
-
 def main():
-    print("=== 裱框報價程式（依才計價）===\n")
+    print("=== 裱框報價程式（外框/內框：周長計價；其他：才計價）===\n")
 
     w = prompt_float("請輸入作品『寬』(cm): ")
     h = prompt_float("請輸入作品『高』(cm): ")
 
     orientation = "直式" if h >= w else "橫式"
-    if prompt_yesno(f"系統判斷為 {orientation}，要手動改嗎？"):
-        orientation = "直式" if input("輸入 1=直式, 2=橫式: ").strip() == "1" else "橫式"
+    print(f"系統判斷：{orientation}")
 
-    print("\n選擇第一部分：作品類型/框法（會決定內襯預留）")
+    print("\n選擇第一部分：作品類型/框法（決定內襯預留）")
     options = list(CATEGORY_PADDING_RULES.keys()) + [
         "水墨書法-一般裱框(依尺寸表)",
         "水墨書法-裱立體框(直橫不同)",
         "水墨書法-裱捲軸(依尺寸表)",
         "自訂內襯(手動輸入上下左右)"
     ]
-
     for i, opt in enumerate(options, 1):
         print(f"{i:>2}. {opt}")
-
     idx = int(prompt_float("請輸入選項編號: "))
     choice = options[idx - 1]
 
@@ -277,13 +272,18 @@ def main():
     else:
         pad = CATEGORY_PADDING_RULES[choice]
 
-    # Part 2 materials
-    print("\n第二部分：輸入材料單價（每才）。不使用就填 0。")
-    material_prices = {}
-    for k in MATERIAL_FIELDS:
-        material_prices[k] = prompt_float(f"{k} (元/才): ")
+    print("\n外框/內框：選擇周長計價單位")
+    unit_choice = input("輸入 1=英吋  2=尺(預設台尺30.3cm): ").strip()
+    frame_unit = "inch" if unit_choice == "1" else "chi"
 
-    # Part 3 processes
+    outer_frame_unit_price = prompt_float(f"外框單價（元/{'英吋' if frame_unit=='inch' else '尺'}）: ")
+    inner_frame_unit_price = prompt_float(f"內框單價（元/{'英吋' if frame_unit=='inch' else '尺'}）: ")
+
+    print("\n其他材料（卡紙/布類）：每才單價。不使用填 0。")
+    area_material_prices = {}
+    for k in AREA_MATERIAL_FIELDS:
+        area_material_prices[k] = prompt_float(f"{k} (元/才): ")
+
     print("\n第三部分：選擇工法/配件（每才計價）。輸入逗號分隔編號，如：1,3,5；不選直接 Enter。")
     process_names = list(PROCESS_UNIT_PRICES.keys())
     for i, p in enumerate(process_names, 1):
@@ -296,29 +296,40 @@ def main():
             n = int(part.strip())
             selected.append(process_names[n - 1])
 
-    # 計算
     quote = calc_quote(
         w_cm=w,
         h_cm=h,
         padding=pad,
-        material_unit_prices=material_prices,
-        selected_processes=selected
+        frame_unit=frame_unit,
+        outer_frame_unit_price=outer_frame_unit_price,
+        inner_frame_unit_price=inner_frame_unit_price,
+        area_material_unit_prices=area_material_prices,
+        selected_processes=selected,
     )
 
-    # 輸出
     ow, oh = quote["outer_size_cm"]
     owi, ohi = quote["outer_size_in"]
     print("\n================= 報價結果 =================")
-    print(f"作品尺寸(cm)：{w:.2f} × {h:.2f}  （{orientation}）")
+    print(f"作品尺寸(cm)：{w:.2f} × {h:.2f}（{orientation}）")
     print(f"內襯預留(cm)：上{pad.top} 下{pad.bottom} 左{pad.left} 右{pad.right}")
-    print(f"裱框內容物外尺寸(cm)：{ow:.2f} × {oh:.2f}")
-    print(f"裱框內容物外尺寸(in)：{owi:.2f} × {ohi:.2f}")
-    print(f"面積(才)：(外寬×外高)/900 = {quote['cai']:.4f}")
+    print(f"內容物外尺寸(cm)：{ow:.2f} × {oh:.2f}")
+    print(f"內容物外尺寸(in)：{owi:.2f} × {ohi:.2f}")
 
-    print("\n--- 材料費（每才 × 才數）---")
-    for k, v in quote["material_costs"].items():
+    print(f"\n框周長：{quote['perimeter_cm']:.2f} cm = {quote['perimeter_unit']:.2f} {quote['perimeter_unit_label']}")
+    print(f"外框費：{quote['outer_frame_cost']:.2f}")
+    print(f"內框費：{quote['inner_frame_cost']:.2f}")
+    print(f"框費小計：{quote['frame_total']:.2f}")
+
+    print(f"\n面積(才)：(外寬×外高)/900 = {quote['cai']:.4f}")
+
+    print("\n--- 其他材料費（每才 × 才數）---")
+    any_mat = False
+    for k, v in quote["area_material_costs"].items():
         if v > 0:
+            any_mat = True
             print(f"{k}: {v:.2f}")
+    if not any_mat:
+        print("（未填材料單價或皆為 0）")
     print(f"材料小計：{quote['material_total']:.2f}")
 
     print("\n--- 工藝/配件費（每才 × 才數）---")
@@ -330,7 +341,7 @@ def main():
     print(f"工藝小計：{quote['process_total']:.2f}")
 
     print("\n=== 第四部分：總價 ===")
-    print(f"總價（材料 + 工藝）：{quote['grand_total']:.2f}")
+    print(f"總價（框費 + 材料 + 工藝）：{quote['grand_total']:.2f}")
     print("===========================================\n")
 
 if __name__ == "__main__":
